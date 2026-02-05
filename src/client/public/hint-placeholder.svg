@@ -1,0 +1,8 @@
+<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="160" height="160" rx="24" fill="#1F2937"/>
+  <rect x="18" y="18" width="124" height="124" rx="18" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <path d="M52 104C60 92 74 84 90 84C106 84 120 92 128 104" stroke="#94A3B8" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="64" cy="70" r="10" fill="#94A3B8"/>
+  <circle cx="96" cy="70" r="10" fill="#94A3B8"/>
+  <text x="80" y="132" text-anchor="middle" font-family="Arial" font-size="16" fill="#CBD5F5">Hint</text>
+</svg>
