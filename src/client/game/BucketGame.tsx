@@ -67,6 +67,7 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
   const gameRef = useRef<HTMLDivElement | null>(null);
   const bucketRefs = useRef<Array<HTMLDivElement | null>>([]);
   const gameSizeRef = useRef(gameSize);
+  const lineYRef = useRef(0);
 
   // Falling speed multiplier.
   // Example: set to 0.6 for slower letters, 1.0 for default, 1.5 for faster.
@@ -94,6 +95,27 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
       ),
     [buckets, validLettersByIndex],
   );
+
+  const layoutMetrics = useMemo(() => {
+    const bucketBottom = 16;
+    const bucketsHeight = 96;
+    const hintGap = 8;
+    const hintHeight = 20;
+    const lineGap = 8;
+    const lineY =
+      gameSize.height - (bucketBottom + bucketsHeight + hintGap + hintHeight + lineGap);
+    return {
+      bucketBottom,
+      bucketsHeight,
+      hintY: gameSize.height - (bucketBottom + bucketsHeight + hintGap + hintHeight),
+      lineY,
+      statusY: lineY - 24,
+    };
+  }, [gameSize.height]);
+
+  useEffect(() => {
+    lineYRef.current = layoutMetrics.lineY;
+  }, [layoutMetrics.lineY]);
 
   useEffect(() => {
     const updateSize = () => {
@@ -145,7 +167,7 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
                   y: letter.y + letter.speed,
                 },
           )
-          .filter((letter) => letter.y < gameSizeRef.current.height + LETTER_SIZE),
+          .filter((letter) => letter.y + LETTER_SIZE < lineYRef.current),
       );
     }, 40);
 
@@ -356,24 +378,39 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
             ))}
           </div>
 
-          <div className="absolute bottom-28 left-1/2 w-[90%] -translate-x-1/2 text-center text-sm text-slate-200">
+          <div
+            className="absolute left-1/2 w-[90%] -translate-x-1/2 text-center text-sm text-slate-200"
+            style={{ top: `${layoutMetrics.statusY}px` }}
+          >
             <span className={`transition ${status ? 'opacity-100' : 'opacity-0'}`}>
               {status}
             </span>
           </div>
 
-          <div className="absolute bottom-20 left-1/2 w-[90%] -translate-x-1/2 text-center text-xs text-slate-400">
+          <div
+            className="absolute left-1/2 h-px w-[90%] -translate-x-1/2 bg-white/20"
+            style={{ top: `${layoutMetrics.lineY}px` }}
+          />
+
+          <div
+            className="absolute left-1/2 w-[90%] -translate-x-1/2 text-center text-xs text-slate-400"
+            style={{ top: `${layoutMetrics.hintY}px` }}
+          >
             {status ? '' : `Hint: words are like ${wordSet.words.join(', ')}.`}
           </div>
 
-          <div className="absolute bottom-4 left-1/2 flex w-[90%] -translate-x-1/2 justify-between gap-4">
+          <div
+            className="absolute left-1/2 flex w-[90%] -translate-x-1/2 justify-between gap-4"
+            style={{ bottom: `${layoutMetrics.bucketBottom}px` }}
+          >
             {buckets.map((bucket, index) => (
               <div
                 key={`bucket-${index}`}
                 ref={(node) => {
                   bucketRefs.current[index] = node;
                 }}
-                className="flex h-24 flex-1 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-white/30 bg-white/5 text-center text-sm transition"
+                className="flex flex-1 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-white/30 bg-white/5 text-center text-sm transition"
+                style={{ height: `${layoutMetrics.bucketsHeight}px` }}
               >
                 <span className="text-xs uppercase tracking-[0.3em] text-slate-300">
                   Bucket {index + 1}
