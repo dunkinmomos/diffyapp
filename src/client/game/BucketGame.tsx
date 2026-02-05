@@ -1,3 +1,4 @@
+// src/client/game/BucketGame.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildBlurredLetters,
@@ -27,18 +28,30 @@ type BucketGameProps = {
 
 const LETTER_SIZE = 48;
 
+// --- Layout constants (px) ---
+const BUCKET_BOTTOM = 24;
+const BUCKET_HEIGHT = 112; // h-28 (28*4)
+const HINT_GAP_ABOVE_BUCKETS = 16;
+
 const getId = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+/**
+ * Fit playfield within viewport without scrolling.
+ * Clamped to keep UI stable across devices.
+ */
 const buildGameSize = (): GameSize => {
   const width = window.innerWidth;
   const height = window.innerHeight;
+
+  const outerPadding = 16;
+  const maxHeight = Math.min(height - outerPadding * 2, 760);
   const isWide = width / height > 1.1;
-  const maxHeight = Math.min(height * 0.68, 620);
-  const maxWidth = Math.min(width * 0.92, isWide ? maxHeight * 1.1 : maxHeight * 0.78);
+  const maxWidth = Math.min(width - outerPadding * 2, isWide ? maxHeight * 1.18 : maxHeight * 0.86);
+
   return {
-    width: Math.max(300, Math.round(maxWidth)),
-    height: Math.max(460, Math.round(maxHeight)),
+    width: Math.max(320, Math.round(maxWidth)),
+    height: Math.max(520, Math.round(maxHeight)),
   };
 };
 
@@ -64,18 +77,18 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
   const [gameSize, setGameSize] = useState<GameSize>({ width: 480, height: 640 });
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [hoverBucketIndex, setHoverBucketIndex] = useState<number | null>(null);
+
   const gameRef = useRef<HTMLDivElement | null>(null);
   const bucketRefs = useRef<Array<HTMLDivElement | null>>([]);
   const gameSizeRef = useRef(gameSize);
-  const lineYRef = useRef(0);
 
-  // Falling speed multiplier.
-  // Example: set to 0.6 for slower letters, 1.0 for default, 1.5 for faster.
-  // You can wire this to a difficulty control later if desired.
+  // Falling speed multiplier (keep for future tuning).
   const [fallSpeedMultiplier] = useState(1);
 
   const validLettersByIndex = useMemo(() => getValidLettersByIndex(wordSet), [wordSet]);
 
+  // Target display letters (existing effect).
   const displayLetters = useMemo(
     () =>
       blurredLetters.map((randomLetter, index) => {
@@ -89,39 +102,20 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
   );
 
   const revealedIndexes = useMemo(
-    () =>
-      buckets.map((letter, index) =>
-        Boolean(letter && validLettersByIndex[index].has(letter)),
-      ),
+    () => buckets.map((letter, index) => Boolean(letter && validLettersByIndex[index].has(letter))),
     [buckets, validLettersByIndex],
   );
 
-  const layoutMetrics = useMemo(() => {
-    const bucketBottom = 16;
-    const bucketsHeight = 96;
-    const hintGap = 8;
-    const hintHeight = 20;
-    const lineGap = 8;
-    const lineY =
-      gameSize.height - (bucketBottom + bucketsHeight + hintGap + hintHeight + lineGap);
-    return {
-      bucketBottom,
-      bucketsHeight,
-      hintY: gameSize.height - (bucketBottom + bucketsHeight + hintGap + hintHeight),
-      lineY,
-      statusY: lineY - 24,
-    };
-  }, [gameSize.height]);
-
-  useEffect(() => {
-    lineYRef.current = layoutMetrics.lineY;
-  }, [layoutMetrics.lineY]);
+  // Hint position relative to the bucket box.
+  const hintBottomPx = BUCKET_BOTTOM + BUCKET_HEIGHT + HINT_GAP_ABOVE_BUCKETS;
 
   useEffect(() => {
     const updateSize = () => {
       setGameSize((prev) => {
         const next = buildGameSize();
         gameSizeRef.current = next;
+
+        // Keep existing falling letters proportionally positioned on resize.
         setLetters((current) =>
           current.map((letter) => ({
             ...letter,
@@ -129,9 +123,11 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
             y: (letter.y / prev.height) * next.height,
           })),
         );
+
         return next;
       });
     };
+
     updateSize();
     window.addEventListener('resize', updateSize);
     return () => window.removeEventListener('resize', updateSize);
@@ -159,19 +155,8 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
     const fallInterval = window.setInterval(() => {
       setLetters((prev) =>
         prev
-          .map((letter) =>
-            letter.isDragging
-              ? letter
-              : {
-                  ...letter,
-                  y: letter.y + letter.speed,
-                },
-          )
-          .filter((letter) =>
-            letter.isDragging
-              ? true
-              : letter.y < lineYRef.current + LETTER_SIZE,
-          ),
+          .map((letter) => (letter.isDragging ? letter : { ...letter, y: letter.y + letter.speed }))
+          .filter((letter) => letter.y < gameSizeRef.current.height + LETTER_SIZE),
       );
     }, 40);
 
@@ -179,11 +164,11 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
   }, []);
 
   useEffect(() => {
-    if (!isWordComplete(buckets, wordSet)) {
-      return;
-    }
+    if (!isWordComplete(buckets, wordSet)) return;
+
     setScore((prev) => prev + 10);
     setStatus('Nice! Word completed.');
+
     window.setTimeout(() => {
       startNewRound();
       setStatus('');
@@ -191,14 +176,11 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
   }, [buckets, wordSet]);
 
   useEffect(() => {
-    if (!draggedId) {
-      return;
-    }
+    if (!draggedId) return;
 
     const handlePointerMove = (event: PointerEvent) => {
-      if (!gameRef.current) {
-        return;
-      }
+      if (!gameRef.current) return;
+
       const bounds = gameRef.current.getBoundingClientRect();
       const nextX = Math.min(
         Math.max(event.clientX - bounds.left - dragOffset.x, 0),
@@ -208,33 +190,39 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
         Math.max(event.clientY - bounds.top - dragOffset.y, 0),
         bounds.height - LETTER_SIZE,
       );
+
       setLetters((prev) =>
-        prev.map((letter) =>
-          letter.id === draggedId
-            ? {
-                ...letter,
-                x: nextX,
-                y: nextY,
-              }
-            : letter,
-        ),
+        prev.map((letter) => (letter.id === draggedId ? { ...letter, x: nextX, y: nextY } : letter)),
       );
+
+      // Hover feedback + slightly bigger effective drop zone
+      const hitPad = 14;
+      const hoverIndex = bucketRefs.current.findIndex((bucket) => {
+        if (!bucket) return false;
+        const rect = bucket.getBoundingClientRect();
+        return (
+          event.clientX >= rect.left - hitPad &&
+          event.clientX <= rect.right + hitPad &&
+          event.clientY >= rect.top - hitPad &&
+          event.clientY <= rect.bottom + hitPad
+        );
+      });
+
+      setHoverBucketIndex(hoverIndex === -1 ? null : hoverIndex);
     };
 
     const handlePointerUp = (event: PointerEvent) => {
-      if (!gameRef.current) {
-        return;
-      }
+      if (!gameRef.current) return;
+
+      const hitPad = 14;
       const dropTargetIndex = bucketRefs.current.findIndex((bucket) => {
-        if (!bucket) {
-          return false;
-        }
+        if (!bucket) return false;
         const rect = bucket.getBoundingClientRect();
         return (
-          event.clientX >= rect.left &&
-          event.clientX <= rect.right &&
-          event.clientY >= rect.top &&
-          event.clientY <= rect.bottom
+          event.clientX >= rect.left - hitPad &&
+          event.clientX <= rect.right + hitPad &&
+          event.clientY >= rect.top - hitPad &&
+          event.clientY <= rect.bottom + hitPad
         );
       });
 
@@ -243,11 +231,10 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
         const isValidDrop = draggedLetter
           ? validLettersByIndex[dropTargetIndex].has(draggedLetter.char)
           : false;
+
         if (draggedLetter && isValidDrop) {
           setBuckets((prev) =>
-            prev.map((slot, slotIndex) =>
-              slotIndex === dropTargetIndex ? draggedLetter.char : slot,
-            ),
+            prev.map((slot, slotIndex) => (slotIndex === dropTargetIndex ? draggedLetter.char : slot)),
           );
           setLetters((prev) => prev.filter((letter) => letter.id !== draggedId));
         } else {
@@ -266,6 +253,7 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
       }
 
       setDraggedId(null);
+      setHoverBucketIndex(null);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -278,19 +266,18 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
   }, [buckets, dragOffset.x, dragOffset.y, draggedId, letters, validLettersByIndex]);
 
   const handlePointerDown = (id: string, event: React.PointerEvent<HTMLDivElement>) => {
-    if (!gameRef.current) {
-      return;
-    }
+    if (!gameRef.current) return;
+
     const bounds = gameRef.current.getBoundingClientRect();
     const letter = letters.find((item) => item.id === id);
-    if (!letter) {
-      return;
-    }
+    if (!letter) return;
+
     setDraggedId(id);
     setDragOffset({
       x: event.clientX - bounds.left - letter.x,
       y: event.clientY - bounds.top - letter.y,
     });
+
     setLetters((prev) =>
       prev.map((item) => (item.id === id ? { ...item, isDragging: true } : item)),
     );
@@ -304,73 +291,84 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
     setLetters([]);
   };
 
+  // NOTE: still used programmatically (e.g., you might wire a button later), but icon removed.
   const handleReset = () => {
     startNewRound();
     setStatus('');
   };
 
   return (
-    <div className="flex h-dvh items-center justify-center overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-800 px-4 py-3 text-white">
-      <div className="flex w-full max-w-5xl flex-col items-center gap-3">
-        <header className="flex w-full flex-col items-center gap-2 text-center">
-          <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Bucket Sorter</p>
-          <h1 className="text-2xl font-semibold sm:text-3xl">Build the word before the letters drop!</h1>
-          <p className="text-sm text-slate-300">
-            Drag the falling letters into the buckets to spell a valid word. Score points for each
-            correct word.
-          </p>
-        </header>
-
+    <div className="flex h-[100dvh] w-full items-center justify-center overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-800 p-3 text-white sm:p-4">
+      <div className="flex w-full max-w-5xl flex-col items-center">
         <section
           ref={gameRef}
           className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-slate-800/90 via-slate-900/90 to-slate-950/90 shadow-2xl"
           style={{ width: `${gameSize.width}px`, height: `${gameSize.height}px` }}
         >
-          <div className="absolute left-5 right-5 top-4 flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm">
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-300">Target</div>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 text-2xl font-semibold">
-                  {displayLetters.map((letter, index) => (
-                    <span
-                      key={`target-${letter}-${index}`}
-                      className={`rounded-lg px-2 py-1 text-white transition ${
-                        revealedIndexes[index] ? 'bg-white/20' : 'bg-white/10 blur-sm'
-                      }`}
-                    >
-                      {letter.toUpperCase()}
-                    </span>
-                  ))}
+          {/* App title + description */}
+          <div className="pointer-events-none absolute left-1/2 top-4 w-[92%] -translate-x-1/2 text-center">
+            <p className="text-[11px] uppercase tracking-[0.4em] text-slate-400 sm:text-sm">
+              Bucket Sorter
+            </p>
+            <h1 className="mt-1 text-base font-semibold leading-tight sm:text-xl">
+              Build the word before the letters drop!
+            </h1>
+            <p className="mt-1 hidden text-xs text-slate-300 sm:block">
+              Drag the falling letters into the buckets to spell a valid word. Score points for each correct word.
+            </p>
+          </div>
+
+          {/* Responsive HUD: smaller in mobile; prevents overflow */}
+          <div className="absolute left-3 right-3 top-20 sm:left-6 sm:right-6 sm:top-5">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:items-start sm:justify-between sm:gap-4">
+              {/* Target */}
+              <div className="min-w-0 rounded-2xl bg-white/10 px-3 py-2 text-sm sm:px-4 sm:py-3">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-300 sm:text-xs">
+                  Target
                 </div>
-                {showHintImage ? (
-                  <img
-                    className="h-14 w-14 rounded-xl border border-white/20 bg-white/10 object-cover"
-                    src="/hint-placeholder.svg"
-                    alt="Hint placeholder"
-                  />
-                ) : null}
+
+                <div className="mt-2 flex min-w-0 items-center gap-2">
+                  {/* Wrap and clamp so it never overflows the box (desktop + mobile) */}
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    {displayLetters.map((letter, index) => (
+                      <span
+                        key={`target-${letter}-${index}`}
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-lg text-lg font-semibold text-white transition sm:h-11 sm:w-11 sm:text-xl ${
+                          revealedIndexes[index] ? 'bg-white/20' : 'bg-white/10 blur-sm'
+                        }`}
+                      >
+                        {letter.toUpperCase()}
+                      </span>
+                    ))}
+                  </div>
+
+                  {showHintImage ? (
+                    <img
+                      className="hidden h-14 w-14 shrink-0 rounded-xl border border-white/20 bg-white/10 object-cover sm:block"
+                      src="/hint-placeholder.svg"
+                      alt="Hint placeholder"
+                    />
+                  ) : null}
+                </div>
               </div>
-            </div>
 
-            <button
-              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:bg-white/20"
-              onClick={handleReset}
-            >
-              New Word
-            </button>
-
-            <div className="flex flex-col gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm">
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-300">Score</div>
-              <div className="text-2xl font-semibold">{score}</div>
+              {/* Score (no refresh icon in any view) */}
+              <div className="min-w-0 rounded-2xl bg-white/10 px-3 py-2 text-sm sm:px-4 sm:py-3">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-300 sm:text-xs">
+                  Score
+                </div>
+                <div className="mt-2 text-2xl font-semibold leading-none sm:text-2xl">{score}</div>
+              </div>
             </div>
           </div>
 
+          {/* Falling letters */}
           <div className="absolute inset-0">
             {letters.map((letter) => (
               <div
                 key={letter.id}
                 onPointerDown={(event) => handlePointerDown(letter.id, event)}
-                className="absolute flex h-12 w-12 cursor-grab touch-none items-center justify-center rounded-full border border-white/20 bg-white/10 text-xl font-semibold text-white shadow-lg backdrop-blur"
+                className="absolute flex h-12 w-12 cursor-grab touch-none items-center justify-center rounded-full border border-white/20 bg-white/10 text-xl font-semibold text-white shadow-lg backdrop-blur active:cursor-grabbing"
                 style={{
                   left: `${letter.x}px`,
                   top: `${letter.y}px`,
@@ -382,50 +380,51 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
             ))}
           </div>
 
+          {/* Hint (just above buckets) */}
           <div
-            className="absolute left-1/2 w-[90%] -translate-x-1/2 text-center text-sm text-slate-200"
-            style={{ top: `${layoutMetrics.statusY}px` }}
+            className="absolute left-1/2 w-[92%] -translate-x-1/2 text-center text-sm text-slate-200"
+            style={{ bottom: hintBottomPx }}
           >
-            <span className={`transition ${status ? 'opacity-100' : 'opacity-0'}`}>
-              {status}
-            </span>
+            {status || `Hint: words are like ${wordSet.words.join(', ')}.`}
           </div>
 
+          {/* Buckets */}
           <div
-            className="absolute left-1/2 h-px w-[90%] -translate-x-1/2 bg-white/20"
-            style={{ top: `${layoutMetrics.lineY}px` }}
-          />
-
-          <div
-            className="absolute left-1/2 w-[90%] -translate-x-1/2 text-center text-xs text-slate-400"
-            style={{ top: `${layoutMetrics.hintY}px` }}
+            className="absolute left-1/2 flex w-[92%] -translate-x-1/2 justify-between gap-3"
+            style={{ bottom: BUCKET_BOTTOM }}
           >
-            {status ? '' : `Hint: words are like ${wordSet.words.join(', ')}.`}
-          </div>
-
-          <div
-            className="absolute left-1/2 flex w-[90%] -translate-x-1/2 justify-between gap-4"
-            style={{ bottom: `${layoutMetrics.bucketBottom}px` }}
-          >
-            {buckets.map((bucket, index) => (
-              <div
-                key={`bucket-${index}`}
-                ref={(node) => {
-                  bucketRefs.current[index] = node;
-                }}
-                className="flex flex-1 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-white/30 bg-white/5 text-center text-sm transition"
-                style={{ height: `${layoutMetrics.bucketsHeight}px` }}
-              >
-                <span className="text-xs uppercase tracking-[0.3em] text-slate-300">
-                  Bucket {index + 1}
-                </span>
-                <span className="text-3xl font-semibold text-white">
-                  {bucket ? bucket.toUpperCase() : '?'}
-                </span>
-              </div>
-            ))}
+            {buckets.map((bucket, index) => {
+              const isHovering = Boolean(draggedId) && hoverBucketIndex === index;
+              const isFilled = Boolean(bucket);
+              return (
+                <div
+                  key={`bucket-${index}`}
+                  ref={(node) => {
+                    bucketRefs.current[index] = node;
+                  }}
+                  className={[
+                    'flex flex-1 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed bg-white/5 text-center text-sm transition',
+                    'h-28', // matches BUCKET_HEIGHT
+                    isHovering ? 'border-white/50 bg-white/10' : 'border-white/20',
+                    isFilled ? 'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]' : '',
+                  ].join(' ')}
+                >
+                  <span className="text-xs uppercase tracking-[0.3em] text-slate-300">
+                    Bucket {index + 1}
+                  </span>
+                  <span className="text-3xl font-semibold text-white sm:text-4xl">
+                    {bucket ? bucket.toUpperCase() : '?'}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </section>
+
+        {/* keep for future use; not shown */}
+        <button onClick={handleReset} className="hidden" aria-hidden="true" tabIndex={-1}>
+          reset
+        </button>
       </div>
     </div>
   );
