@@ -306,7 +306,7 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
           style={{ width: `${gameSize.width}px`, height: `${gameSize.height}px` }}
         >
           {/* App title + description */}
-          <div className="pointer-events-none absolute left-1/2 top-4 w-[92%] -translate-x-1/2 text-center">
+          <div className="pointer-events-none absolute left-1/2 top-4 w-[92%] max-w-[28rem] -translate-x-1/2 text-center sm:top-5 sm:max-w-[32rem]">
             <p className="text-[11px] uppercase tracking-[0.4em] text-slate-400 sm:text-sm">
               Bucket Sorter
             </p>
