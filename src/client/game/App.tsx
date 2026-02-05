@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type FallingLetter = {
   id: string;
@@ -38,6 +38,7 @@ const WORDS = [
 ];
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
+const LETTER_SIZE = 48;
 
 const pickWord = () => WORDS[Math.floor(Math.random() * WORDS.length)];
 
@@ -70,9 +71,27 @@ export const App = () => {
   const [score, setScore] = useState(0);
   const [status, setStatus] = useState('');
   const [gameSize, setGameSize] = useState<GameSize>({ width: 480, height: 640 });
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const gameRef = useRef<HTMLDivElement | null>(null);
+  const bucketRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const gameSizeRef = useRef(gameSize);
 
   useEffect(() => {
-    const updateSize = () => setGameSize(buildGameSize());
+    const updateSize = () => {
+      setGameSize((prev) => {
+        const next = buildGameSize();
+        gameSizeRef.current = next;
+        setLetters((current) =>
+          current.map((letter) => ({
+            ...letter,
+            x: (letter.x / prev.width) * next.width,
+            y: (letter.y / prev.height) * next.height,
+          })),
+        );
+        return next;
+      });
+    };
     updateSize();
     window.addEventListener('resize', updateSize);
     return () => window.removeEventListener('resize', updateSize);
@@ -84,9 +103,9 @@ export const App = () => {
         const next = {
           id: getId(),
           char: pickLetter(targetWord),
-          x: 8 + Math.random() * 84,
-          y: -10,
-          speed: 0.8 + Math.random() * 1.4,
+          x: Math.random() * (gameSizeRef.current.width - LETTER_SIZE),
+          y: -LETTER_SIZE,
+          speed: 1.2 + Math.random() * 1.8,
           isDragging: false,
         };
         return [...prev, next].slice(-14);
@@ -108,7 +127,7 @@ export const App = () => {
                   y: letter.y + letter.speed,
                 },
           )
-          .filter((letter) => letter.y < 105),
+          .filter((letter) => letter.y < gameSizeRef.current.height + LETTER_SIZE),
       );
     }, 40);
 
@@ -138,30 +157,105 @@ export const App = () => {
     }
   }, [buckets, targetWord]);
 
-  const handleDragStart = (id: string) => {
-    setLetters((prev) =>
-      prev.map((letter) => (letter.id === id ? { ...letter, isDragging: true } : letter)),
-    );
-  };
-
-  const handleDragEnd = (id: string) => {
-    setLetters((prev) =>
-      prev.map((letter) => (letter.id === id ? { ...letter, isDragging: false } : letter)),
-    );
-  };
-
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>, index: number) => {
-    event.preventDefault();
-    if (buckets[index]) {
+  useEffect(() => {
+    if (!draggedId) {
       return;
     }
-    const id = event.dataTransfer.getData('text/plain');
-    const picked = letters.find((letter) => letter.id === id);
-    if (!picked) {
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!gameRef.current) {
+        return;
+      }
+      const bounds = gameRef.current.getBoundingClientRect();
+      const nextX = Math.min(
+        Math.max(event.clientX - bounds.left - dragOffset.x, 0),
+        bounds.width - LETTER_SIZE,
+      );
+      const nextY = Math.min(
+        Math.max(event.clientY - bounds.top - dragOffset.y, 0),
+        bounds.height - LETTER_SIZE,
+      );
+      setLetters((prev) =>
+        prev.map((letter) =>
+          letter.id === draggedId
+            ? {
+                ...letter,
+                x: nextX,
+                y: nextY,
+              }
+            : letter,
+        ),
+      );
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      if (!gameRef.current) {
+        return;
+      }
+      const dropTargetIndex = bucketRefs.current.findIndex((bucket) => {
+        if (!bucket) {
+          return false;
+        }
+        const rect = bucket.getBoundingClientRect();
+        return (
+          event.clientX >= rect.left &&
+          event.clientX <= rect.right &&
+          event.clientY >= rect.top &&
+          event.clientY <= rect.bottom
+        );
+      });
+
+      if (dropTargetIndex !== -1 && !buckets[dropTargetIndex]) {
+        setBuckets((prev) =>
+          prev.map((slot, slotIndex) =>
+            slotIndex === dropTargetIndex
+              ? letters.find((letter) => letter.id === draggedId)?.char ?? slot
+              : slot,
+          ),
+        );
+        setLetters((prev) => prev.filter((letter) => letter.id !== draggedId));
+      } else {
+        setLetters((prev) =>
+          prev.map((letter) =>
+            letter.id === draggedId
+              ? {
+                  ...letter,
+                  isDragging: false,
+                }
+              : letter,
+          ),
+        );
+      }
+
+      setDraggedId(null);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [buckets, dragOffset.x, dragOffset.y, draggedId, letters]);
+
+  const handlePointerDown = (id: string, event: React.PointerEvent<HTMLDivElement>) => {
+    if (!gameRef.current) {
       return;
     }
-    setBuckets((prev) => prev.map((slot, slotIndex) => (slotIndex === index ? picked.char : slot)));
-    setLetters((prev) => prev.filter((letter) => letter.id !== id));
+    const bounds = gameRef.current.getBoundingClientRect();
+    const letter = letters.find((item) => item.id === id);
+    if (!letter) {
+      return;
+    }
+    setDraggedId(id);
+    setDragOffset({
+      x: event.clientX - bounds.left - letter.x,
+      y: event.clientY - bounds.top - letter.y,
+    });
+    setLetters((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, isDragging: true } : item)),
+    );
   };
 
   const handleReset = () => {
@@ -186,6 +280,7 @@ export const App = () => {
         </header>
 
         <section
+          ref={gameRef}
           className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-slate-800/90 via-slate-900/90 to-slate-950/90 shadow-2xl"
           style={{ width: `${gameSize.width}px`, height: `${gameSize.height}px` }}
         >
@@ -209,16 +304,12 @@ export const App = () => {
             {letters.map((letter) => (
               <div
                 key={letter.id}
-                draggable
-                onDragStart={(event) => {
-                  event.dataTransfer.setData('text/plain', letter.id);
-                  handleDragStart(letter.id);
-                }}
-                onDragEnd={() => handleDragEnd(letter.id)}
-                className="absolute flex h-12 w-12 cursor-grab items-center justify-center rounded-full border border-white/20 bg-white/10 text-xl font-semibold text-white shadow-lg backdrop-blur"
+                onPointerDown={(event) => handlePointerDown(letter.id, event)}
+                className="absolute flex h-12 w-12 cursor-grab touch-none items-center justify-center rounded-full border border-white/20 bg-white/10 text-xl font-semibold text-white shadow-lg backdrop-blur"
                 style={{
-                  left: `${letter.x}%`,
-                  top: `${letter.y}%`,
+                  left: `${letter.x}px`,
+                  top: `${letter.y}px`,
+                  zIndex: letter.isDragging ? 20 : 1,
                 }}
               >
                 {letter.char.toUpperCase()}
@@ -230,9 +321,10 @@ export const App = () => {
             {buckets.map((bucket, index) => (
               <div
                 key={`bucket-${index}`}
+                ref={(node) => {
+                  bucketRefs.current[index] = node;
+                }}
                 className="flex h-20 flex-1 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-white/20 bg-white/5 text-center text-sm transition"
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => handleDrop(event, index)}
               >
                 <span className="text-xs uppercase tracking-[0.3em] text-slate-300">
                   Bucket {index + 1}
