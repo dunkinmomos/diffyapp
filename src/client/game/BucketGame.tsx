@@ -167,7 +167,11 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
                   y: letter.y + letter.speed,
                 },
           )
-          .filter((letter) => letter.y + LETTER_SIZE < lineYRef.current),
+          .filter((letter) =>
+            letter.isDragging
+              ? true
+              : letter.y < lineYRef.current + LETTER_SIZE,
+          ),
       );
     }, 40);
 
