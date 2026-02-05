@@ -34,11 +34,11 @@ const buildGameSize = (): GameSize => {
   const width = window.innerWidth;
   const height = window.innerHeight;
   const isWide = width / height > 1.1;
-  const maxHeight = Math.min(height * 0.82, 720);
-  const maxWidth = Math.min(width * 0.92, isWide ? maxHeight * 1.1 : maxHeight * 0.72);
+  const maxHeight = Math.min(height * 0.68, 620);
+  const maxWidth = Math.min(width * 0.92, isWide ? maxHeight * 1.1 : maxHeight * 0.78);
   return {
-    width: Math.max(320, Math.round(maxWidth)),
-    height: Math.max(520, Math.round(maxHeight)),
+    width: Math.max(300, Math.round(maxWidth)),
+    height: Math.max(460, Math.round(maxHeight)),
   };
 };
 
@@ -284,10 +284,10 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-slate-950 via-slate-900 to-slate-800 p-4 text-white">
-      <div className="flex w-full max-w-5xl flex-col items-center gap-4">
+    <div className="flex h-dvh items-center justify-center overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-800 px-4 py-3 text-white">
+      <div className="flex w-full max-w-5xl flex-col items-center gap-3">
         <header className="flex w-full flex-col items-center gap-2 text-center">
-          <p className="text-sm uppercase tracking-[0.4em] text-slate-400">Bucket Sorter</p>
+          <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Bucket Sorter</p>
           <h1 className="text-2xl font-semibold sm:text-3xl">Build the word before the letters drop!</h1>
           <p className="text-sm text-slate-300">
             Drag the falling letters into the buckets to spell a valid word. Score points for each
@@ -300,34 +300,43 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
           className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-slate-800/90 via-slate-900/90 to-slate-950/90 shadow-2xl"
           style={{ width: `${gameSize.width}px`, height: `${gameSize.height}px` }}
         >
-          <div className="absolute left-6 top-5 flex flex-col gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm">
-            <div className="text-xs uppercase tracking-[0.3em] text-slate-300">Target</div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 text-2xl font-semibold">
-                {displayLetters.map((letter, index) => (
-                  <span
-                    key={`target-${letter}-${index}`}
-                    className={`rounded-lg px-2 py-1 text-white transition ${
-                      revealedIndexes[index] ? 'bg-white/20' : 'bg-white/10 blur-sm'
-                    }`}
-                  >
-                    {letter.toUpperCase()}
-                  </span>
-                ))}
+          <div className="absolute left-5 right-5 top-4 flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm">
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-300">Target</div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 text-2xl font-semibold">
+                  {displayLetters.map((letter, index) => (
+                    <span
+                      key={`target-${letter}-${index}`}
+                      className={`rounded-lg px-2 py-1 text-white transition ${
+                        revealedIndexes[index] ? 'bg-white/20' : 'bg-white/10 blur-sm'
+                      }`}
+                    >
+                      {letter.toUpperCase()}
+                    </span>
+                  ))}
+                </div>
+                {showHintImage ? (
+                  <img
+                    className="h-14 w-14 rounded-xl border border-white/20 bg-white/10 object-cover"
+                    src="/hint-placeholder.svg"
+                    alt="Hint placeholder"
+                  />
+                ) : null}
               </div>
-              {showHintImage ? (
-                <img
-                  className="h-16 w-16 rounded-xl border border-white/20 bg-white/10 object-cover"
-                  src="/hint-placeholder.svg"
-                  alt="Hint placeholder"
-                />
-              ) : null}
             </div>
-          </div>
 
-          <div className="absolute right-6 top-5 flex flex-col gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm">
-            <div className="text-xs uppercase tracking-[0.3em] text-slate-300">Score</div>
-            <div className="text-2xl font-semibold">{score}</div>
+            <button
+              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:bg-white/20"
+              onClick={handleReset}
+            >
+              New Word
+            </button>
+
+            <div className="flex flex-col gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm">
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-300">Score</div>
+              <div className="text-2xl font-semibold">{score}</div>
+            </div>
           </div>
 
           <div className="absolute inset-0">
@@ -347,41 +356,35 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
             ))}
           </div>
 
-          <div className="absolute bottom-6 left-1/2 flex w-[88%] -translate-x-1/2 justify-between gap-3">
+          <div className="absolute bottom-28 left-1/2 w-[90%] -translate-x-1/2 text-center text-sm text-slate-200">
+            <span className={`transition ${status ? 'opacity-100' : 'opacity-0'}`}>
+              {status}
+            </span>
+          </div>
+
+          <div className="absolute bottom-20 left-1/2 w-[90%] -translate-x-1/2 text-center text-xs text-slate-400">
+            {status ? '' : `Hint: words are like ${wordSet.words.join(', ')}.`}
+          </div>
+
+          <div className="absolute bottom-4 left-1/2 flex w-[90%] -translate-x-1/2 justify-between gap-4">
             {buckets.map((bucket, index) => (
               <div
                 key={`bucket-${index}`}
                 ref={(node) => {
                   bucketRefs.current[index] = node;
                 }}
-                className="flex h-20 flex-1 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-white/20 bg-white/5 text-center text-sm transition"
+                className="flex h-24 flex-1 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-white/30 bg-white/5 text-center text-sm transition"
               >
                 <span className="text-xs uppercase tracking-[0.3em] text-slate-300">
                   Bucket {index + 1}
                 </span>
-                <span className="text-2xl font-semibold text-white">
+                <span className="text-3xl font-semibold text-white">
                   {bucket ? bucket.toUpperCase() : '?'}
                 </span>
               </div>
             ))}
           </div>
-
-          <div className="absolute bottom-28 left-1/2 w-[90%] -translate-x-1/2 text-center text-sm text-slate-200">
-            {status || `Hint: words are like ${wordSet.words.join(', ')}.`}
-          </div>
         </section>
-
-        <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-slate-300">
-          <button
-            className="rounded-full bg-white/10 px-4 py-2 font-medium text-white transition hover:bg-white/20"
-            onClick={handleReset}
-          >
-            New Word
-          </button>
-          <div className="rounded-full border border-white/10 px-4 py-2">
-            Aspect-aware layout adapts to your screen size.
-          </div>
-        </div>
       </div>
     </div>
   );
