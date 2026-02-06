@@ -1,5 +1,11 @@
 // src/client/game/BucketGame.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  InitResponse,
+  LeaderboardEntry,
+  LeaderboardResponse,
+  LeaderboardUpdateResponse,
+} from '../../shared/types/api';
 import {
   buildBlurredLetters,
   getValidLettersByIndex,
@@ -78,6 +84,8 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [hoverBucketIndex, setHoverBucketIndex] = useState<number | null>(null);
+  const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
+  const [playerUsername, setPlayerUsername] = useState('anonymous');
 
   const gameRef = useRef<HTMLDivElement | null>(null);
   const bucketRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -132,6 +140,57 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
     window.addEventListener('resize', updateSize);
     return () => window.removeEventListener('resize', updateSize);
   }, []);
+
+  useEffect(() => {
+    const loadPlayer = async () => {
+      try {
+        const res = await fetch('/api/init');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: InitResponse = await res.json();
+        if (data.type !== 'init') throw new Error('Unexpected response');
+        setPlayerUsername(data.username);
+      } catch (error) {
+        console.error('Failed to load player', error);
+      }
+    };
+
+    const loadLeaderboard = async () => {
+      try {
+        const res = await fetch('/api/leaderboard');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: LeaderboardResponse = await res.json();
+        if (data.type !== 'leaderboard') throw new Error('Unexpected response');
+        setLeaderboardEntries(data.entries);
+      } catch (error) {
+        console.error('Failed to load leaderboard', error);
+      }
+    };
+
+    void loadPlayer();
+    void loadLeaderboard();
+  }, []);
+
+  useEffect(() => {
+    if (score <= 0) return;
+
+    const submitScore = async () => {
+      try {
+        const res = await fetch('/api/leaderboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ score }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: LeaderboardUpdateResponse = await res.json();
+        if (data.type !== 'leaderboard_update') throw new Error('Unexpected response');
+        setLeaderboardEntries(data.entries);
+      } catch (error) {
+        console.error('Failed to update leaderboard', error);
+      }
+    };
+
+    void submitScore();
+  }, [score]);
 
   useEffect(() => {
     const spawnInterval = window.setInterval(() => {
@@ -362,6 +421,37 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
                 </div>
                 <div className="mt-2 text-2xl font-semibold leading-none sm:text-2xl">{score}</div>
               </div>
+            </div>
+
+            {/* Leaderboard */}
+            <div className="mt-3 rounded-2xl bg-white/10 px-3 py-2 text-sm sm:px-4 sm:py-3">
+              <div className="text-[10px] uppercase tracking-[0.3em] text-slate-300 sm:text-xs">
+                Daily Top 10
+              </div>
+              {leaderboardEntries.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-300">Be the first to set a score today.</p>
+              ) : (
+                <ol className="mt-2 space-y-1 text-xs text-slate-200">
+                  {leaderboardEntries.map((entry, index) => {
+                    const isPlayer = entry.username === playerUsername;
+                    return (
+                      <li
+                        key={`${entry.username}-${entry.score}-${index}`}
+                        className={`flex items-center justify-between rounded-md px-2 py-1 ${
+                          isPlayer ? 'bg-white/15 text-white' : 'bg-white/5'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="w-5 text-[11px] text-slate-300">{index + 1}.</span>
+                          <span className="font-medium">{entry.username}</span>
+                          {isPlayer ? <span className="text-[10px] text-slate-300">You</span> : null}
+                        </span>
+                        <span className="font-semibold text-white">{entry.score}</span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
             </div>
           </div>
 
