@@ -66,11 +66,11 @@ const pickLetter = (targetSet: WordSet) => {
 export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
   const [wordSet, setWordSet] = useState<WordSet>(() => pickWordSet());
   const [blurredLetters, setBlurredLetters] = useState<string[]>(() =>
-    buildBlurredLetters(wordSet.words[0].length),
+    buildBlurredLetters(wordSet.words[0].length)
   );
   const [letters, setLetters] = useState<FallingLetter[]>([]);
   const [buckets, setBuckets] = useState<(string | null)[]>(
-    Array(wordSet.words[0].length).fill(null),
+    Array(wordSet.words[0].length).fill(null)
   );
   const [score, setScore] = useState(0);
   const [status, setStatus] = useState('');
@@ -98,12 +98,12 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
         }
         return randomLetter;
       }),
-    [blurredLetters, buckets, validLettersByIndex],
+    [blurredLetters, buckets, validLettersByIndex]
   );
 
   const revealedIndexes = useMemo(
     () => buckets.map((letter, index) => Boolean(letter && validLettersByIndex[index].has(letter))),
-    [buckets, validLettersByIndex],
+    [buckets, validLettersByIndex]
   );
 
   // Hint position relative to the bucket box.
@@ -121,7 +121,7 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
             ...letter,
             x: (letter.x / prev.width) * next.width,
             y: (letter.y / prev.height) * next.height,
-          })),
+          }))
         );
 
         return next;
@@ -156,7 +156,7 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
       setLetters((prev) =>
         prev
           .map((letter) => (letter.isDragging ? letter : { ...letter, y: letter.y + letter.speed }))
-          .filter((letter) => letter.y < gameSizeRef.current.height + LETTER_SIZE),
+          .filter((letter) => letter.y < gameSizeRef.current.height + LETTER_SIZE)
       );
     }, 40);
 
@@ -184,15 +184,15 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
       const bounds = gameRef.current.getBoundingClientRect();
       const nextX = Math.min(
         Math.max(event.clientX - bounds.left - dragOffset.x, 0),
-        bounds.width - LETTER_SIZE,
+        bounds.width - LETTER_SIZE
       );
       const nextY = Math.min(
         Math.max(event.clientY - bounds.top - dragOffset.y, 0),
-        bounds.height - LETTER_SIZE,
+        bounds.height - LETTER_SIZE
       );
 
       setLetters((prev) =>
-        prev.map((letter) => (letter.id === draggedId ? { ...letter, x: nextX, y: nextY } : letter)),
+        prev.map((letter) => (letter.id === draggedId ? { ...letter, x: nextX, y: nextY } : letter))
       );
 
       // Hover feedback + slightly bigger effective drop zone
@@ -234,21 +234,23 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
 
         if (draggedLetter && isValidDrop) {
           setBuckets((prev) =>
-            prev.map((slot, slotIndex) => (slotIndex === dropTargetIndex ? draggedLetter.char : slot)),
+            prev.map((slot, slotIndex) =>
+              slotIndex === dropTargetIndex ? draggedLetter.char : slot
+            )
           );
           setLetters((prev) => prev.filter((letter) => letter.id !== draggedId));
         } else {
           setLetters((prev) =>
             prev.map((letter) =>
-              letter.id === draggedId ? { ...letter, isDragging: false } : letter,
-            ),
+              letter.id === draggedId ? { ...letter, isDragging: false } : letter
+            )
           );
         }
       } else {
         setLetters((prev) =>
           prev.map((letter) =>
-            letter.id === draggedId ? { ...letter, isDragging: false } : letter,
-          ),
+            letter.id === draggedId ? { ...letter, isDragging: false } : letter
+          )
         );
       }
 
@@ -279,7 +281,7 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
     });
 
     setLetters((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, isDragging: true } : item)),
+      prev.map((item) => (item.id === id ? { ...item, isDragging: true } : item))
     );
   };
 
@@ -306,23 +308,24 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
           style={{ width: `${gameSize.width}px`, height: `${gameSize.height}px` }}
         >
           {/* App title + description */}
-          <div className="pointer-events-none absolute left-1/2 top-4 w-[92%] max-w-[28rem] -translate-x-1/2 text-center sm:top-5 sm:max-w-[32rem]">
-            <p className="text-[11px] uppercase tracking-[0.4em] text-slate-400 sm:text-sm">
-              Bucket Sorter
-            </p>
-            <h1 className="mt-1 text-base font-semibold leading-tight sm:text-xl">
-              Build the word before the letters drop!
-            </h1>
-            <p className="mt-1 hidden text-xs text-slate-300 sm:block">
-              Drag the falling letters into the buckets to spell a valid word. Score points for each correct word.
-            </p>
-          </div>
-
-          {/* Responsive HUD: smaller in mobile; prevents overflow */}
-          <div className="absolute left-3 right-3 top-20 sm:left-6 sm:right-6 sm:top-5">
+          <div className="absolute left-3 right-3 top-4 sm:left-6 sm:right-6 sm:top-5 z-10">
             <div className="grid grid-cols-2 gap-2 sm:flex sm:items-start sm:justify-between sm:gap-4">
+              {/* App title + description (Centered in Desktop, Top in Mobile) */}
+              <div className="pointer-events-none col-span-2 order-1 text-center sm:order-2 sm:flex-1 sm:px-4">
+                <p className="text-[11px] uppercase tracking-[0.4em] text-slate-400 sm:text-sm">
+                  Bucket Sorter
+                </p>
+                <h1 className="mt-1 text-base font-semibold leading-tight sm:text-xl">
+                  Build the word before the letters drop!
+                </h1>
+                <p className="mt-1 hidden text-xs text-slate-300 sm:block">
+                  Drag the falling letters into the buckets to spell a valid word. Score points for
+                  each correct word.
+                </p>
+              </div>
+
               {/* Target */}
-              <div className="min-w-0 rounded-2xl bg-white/10 px-3 py-2 text-sm sm:px-4 sm:py-3">
+              <div className="order-2 min-w-0 rounded-2xl bg-white/10 px-3 py-2 text-sm sm:order-1 sm:px-4 sm:py-3">
                 <div className="text-[10px] uppercase tracking-[0.3em] text-slate-300 sm:text-xs">
                   Target
                 </div>
@@ -352,8 +355,8 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
                 </div>
               </div>
 
-              {/* Score (no refresh icon in any view) */}
-              <div className="min-w-0 rounded-2xl bg-white/10 px-3 py-2 text-sm sm:px-4 sm:py-3">
+              {/* Score */}
+              <div className="order-3 min-w-0 rounded-2xl bg-white/10 px-3 py-2 text-sm sm:order-3 sm:px-4 sm:py-3">
                 <div className="text-[10px] uppercase tracking-[0.3em] text-slate-300 sm:text-xs">
                   Score
                 </div>
