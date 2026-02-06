@@ -213,7 +213,7 @@ router.post<
 
       for (const period of periods) {
         const leaderboardKey = getLeaderboardKey(period);
-        await redis.zIncrBy(leaderboardKey, score, username);
+        await redis.zIncrBy(leaderboardKey, String(score), username);
         const expireSeconds = getSecondsUntilNextPeriod(period);
         if (expireSeconds) {
           await redis.expire(leaderboardKey, expireSeconds);
