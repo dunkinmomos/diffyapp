@@ -213,13 +213,10 @@ router.post<
 
       for (const period of periods) {
         const leaderboardKey = getLeaderboardKey(period);
-        const existingScore = await redis.zScore(leaderboardKey, username);
-        if (existingScore === undefined || score > existingScore) {
-          await redis.zAdd(leaderboardKey, { member: username, score });
-          const expireSeconds = getSecondsUntilNextPeriod(period);
-          if (expireSeconds) {
-            await redis.expire(leaderboardKey, expireSeconds);
-          }
+        await redis.zIncrBy(leaderboardKey, score, username);
+        const expireSeconds = getSecondsUntilNextPeriod(period);
+        if (expireSeconds) {
+          await redis.expire(leaderboardKey, expireSeconds);
         }
       }
 
