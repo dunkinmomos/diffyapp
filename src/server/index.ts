@@ -1,5 +1,11 @@
 import express from 'express';
-import { InitResponse, IncrementResponse, DecrementResponse } from '../shared/types/api';
+import {
+  InitResponse,
+  IncrementResponse,
+  DecrementResponse,
+  LeaderboardResponse,
+  LeaderboardUpdateResponse,
+} from '../shared/types/api';
 import { redis, reddit, createServer, context, getServerPort } from '@devvit/web/server';
 import { createPost } from './core/post';
 
@@ -13,6 +19,32 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.text());
 
 const router = express.Router();
+
+const getLeaderboardDay = () => new Date().toISOString().slice(0, 10);
+
+const getLeaderboardKey = () => `leaderboard:${getLeaderboardDay()}`;
+
+const getSecondsUntilNextUtcDay = () => {
+  const now = new Date();
+  const nextUtcMidnight = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+  );
+  return Math.max(60, Math.floor((nextUtcMidnight.getTime() - now.getTime()) / 1000));
+};
+
+const fetchLeaderboardEntries = async () => {
+  const leaderboardKey = getLeaderboardKey();
+  const entries = await redis.zRange(leaderboardKey, 0, '+inf', {
+    by: 'score',
+    reverse: true,
+    limit: { offset: 0, count: 10 },
+  });
+
+  return entries.map((entry) => ({
+    username: entry.member,
+    score: entry.score,
+  }));
+};
 
 router.get<{ postId: string }, InitResponse | { status: string; message: string }>(
   '/api/init',
@@ -88,6 +120,68 @@ router.post<{ postId: string }, DecrementResponse | { status: string; message: s
       postId,
       type: 'decrement',
     });
+  }
+);
+
+router.get<unknown, LeaderboardResponse | { status: string; message: string }>(
+  '/api/leaderboard',
+  async (_req, res): Promise<void> => {
+    try {
+      const entries = await fetchLeaderboardEntries();
+
+      res.json({
+        type: 'leaderboard',
+        day: getLeaderboardDay(),
+        entries,
+      });
+    } catch (error) {
+      console.error('Leaderboard fetch error:', error);
+      let errorMessage = 'Failed to load leaderboard';
+      if (error instanceof Error) {
+        errorMessage = `Leaderboard fetch failed: ${error.message}`;
+      }
+      res.status(400).json({ status: 'error', message: errorMessage });
+    }
+  }
+);
+
+router.post<unknown, LeaderboardUpdateResponse | { status: string; message: string }, { score?: number }>(
+  '/api/leaderboard',
+  async (req, res): Promise<void> => {
+    const score = Number(req.body?.score ?? 0);
+    if (!Number.isFinite(score) || score <= 0) {
+      res.status(400).json({
+        status: 'error',
+        message: 'score must be a positive number',
+      });
+      return;
+    }
+
+    try {
+      const username = (await reddit.getCurrentUsername()) ?? 'anonymous';
+      const leaderboardKey = getLeaderboardKey();
+      const existingScore = await redis.zScore(leaderboardKey, username);
+
+      if (existingScore === undefined || score > existingScore) {
+        await redis.zAdd(leaderboardKey, { member: username, score });
+        await redis.expire(leaderboardKey, getSecondsUntilNextUtcDay());
+      }
+
+      const entries = await fetchLeaderboardEntries();
+
+      res.json({
+        type: 'leaderboard_update',
+        day: getLeaderboardDay(),
+        entries,
+      });
+    } catch (error) {
+      console.error('Leaderboard update error:', error);
+      let errorMessage = 'Failed to update leaderboard';
+      if (error instanceof Error) {
+        errorMessage = `Leaderboard update failed: ${error.message}`;
+      }
+      res.status(400).json({ status: 'error', message: errorMessage });
+    }
   }
 );
 

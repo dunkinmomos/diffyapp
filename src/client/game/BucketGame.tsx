@@ -1,5 +1,11 @@
 // src/client/game/BucketGame.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  InitResponse,
+  LeaderboardEntry,
+  LeaderboardResponse,
+  LeaderboardUpdateResponse,
+} from '../../shared/types/api';
 import {
   buildBlurredLetters,
   getValidLettersByIndex,
@@ -78,6 +84,9 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [hoverBucketIndex, setHoverBucketIndex] = useState<number | null>(null);
+  const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
+  const [playerUsername, setPlayerUsername] = useState('anonymous');
+  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
 
   const gameRef = useRef<HTMLDivElement | null>(null);
   const bucketRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -132,6 +141,57 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
     window.addEventListener('resize', updateSize);
     return () => window.removeEventListener('resize', updateSize);
   }, []);
+
+  useEffect(() => {
+    const loadPlayer = async () => {
+      try {
+        const res = await fetch('/api/init');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: InitResponse = await res.json();
+        if (data.type !== 'init') throw new Error('Unexpected response');
+        setPlayerUsername(data.username);
+      } catch (error) {
+        console.error('Failed to load player', error);
+      }
+    };
+
+    const loadLeaderboard = async () => {
+      try {
+        const res = await fetch('/api/leaderboard');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: LeaderboardResponse = await res.json();
+        if (data.type !== 'leaderboard') throw new Error('Unexpected response');
+        setLeaderboardEntries(data.entries);
+      } catch (error) {
+        console.error('Failed to load leaderboard', error);
+      }
+    };
+
+    void loadPlayer();
+    void loadLeaderboard();
+  }, []);
+
+  useEffect(() => {
+    if (score <= 0) return;
+
+    const submitScore = async () => {
+      try {
+        const res = await fetch('/api/leaderboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ score }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: LeaderboardUpdateResponse = await res.json();
+        if (data.type !== 'leaderboard_update') throw new Error('Unexpected response');
+        setLeaderboardEntries(data.entries);
+      } catch (error) {
+        console.error('Failed to update leaderboard', error);
+      }
+    };
+
+    void submitScore();
+  }, [score]);
 
   useEffect(() => {
     const spawnInterval = window.setInterval(() => {
@@ -300,7 +360,7 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
   };
 
   return (
-    <div className="flex h-[100dvh] w-full items-center justify-center overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-800 p-3 text-white sm:p-4">
+    <div className="relative flex h-[100dvh] w-full items-center justify-center overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-800 p-3 text-white sm:p-4">
       <div className="flex w-full max-w-5xl flex-col items-center">
         <section
           ref={gameRef}
@@ -308,14 +368,14 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
           style={{ width: `${gameSize.width}px`, height: `${gameSize.height}px` }}
         >
           {/* App title + description */}
-          <div className="absolute left-3 right-3 top-4 sm:left-6 sm:right-6 sm:top-5 z-10">
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:items-start sm:justify-between sm:gap-4">
+          <div className="absolute left-3 right-3 top-4 z-10 sm:left-6 sm:right-6 sm:top-5">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,0.9fr)_minmax(0,1fr)] sm:items-start sm:gap-3">
               {/* App title + description (Centered in Desktop, Top in Mobile) */}
-              <div className="pointer-events-none col-span-2 order-1 text-center sm:order-2 sm:flex-1 sm:px-4">
+              <div className="pointer-events-none col-span-2 order-1 text-center sm:order-2 sm:px-2">
                 <p className="text-[11px] uppercase tracking-[0.4em] text-slate-400 sm:text-sm">
                   Bucket Sorter
                 </p>
-                <h1 className="mt-1 text-base font-semibold leading-tight sm:text-xl">
+                <h1 className="mt-1 text-base font-semibold leading-tight sm:text-lg">
                   Build the word before the letters drop!
                 </h1>
                 <p className="mt-1 hidden text-xs text-slate-300 sm:block">
@@ -325,18 +385,18 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
               </div>
 
               {/* Target */}
-              <div className="order-2 min-w-0 rounded-2xl bg-white/10 px-3 py-2 text-sm sm:order-1 sm:px-4 sm:py-3">
-                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-300 sm:text-xs">
+              <div className="order-2 min-w-0 rounded-2xl bg-white/10 px-3 py-2 text-sm sm:order-1 sm:px-3 sm:py-2">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-300 sm:text-[10px]">
                   Target
                 </div>
 
-                <div className="mt-2 flex min-w-0 items-center gap-2">
+                <div className="mt-2 flex min-w-0 items-center gap-2 sm:mt-1.5">
                   {/* Wrap and clamp so it never overflows the box (desktop + mobile) */}
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {displayLetters.map((letter, index) => (
                       <span
                         key={`target-${letter}-${index}`}
-                        className={`inline-flex h-10 w-10 items-center justify-center rounded-lg text-lg font-semibold text-white transition sm:h-11 sm:w-11 sm:text-xl ${
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-lg text-lg font-semibold text-white transition sm:h-9 sm:w-9 sm:text-base ${
                           revealedIndexes[index] ? 'bg-white/20' : 'bg-white/10 blur-sm'
                         }`}
                       >
@@ -356,11 +416,27 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
               </div>
 
               {/* Score */}
-              <div className="order-3 min-w-0 rounded-2xl bg-white/10 px-3 py-2 text-sm sm:order-3 sm:px-4 sm:py-3">
-                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-300 sm:text-xs">
+              <div className="order-3 min-w-0 rounded-2xl bg-white/10 px-3 py-2 text-sm sm:order-3 sm:px-3 sm:py-2">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-300 sm:text-[10px]">
                   Score
                 </div>
-                <div className="mt-2 text-2xl font-semibold leading-none sm:text-2xl">{score}</div>
+                <div className="mt-2 text-2xl font-semibold leading-none sm:mt-1.5 sm:text-xl">
+                  {score}
+                </div>
+              </div>
+
+              {/* Leaderboard button */}
+              <div className="order-4 min-w-0 rounded-2xl bg-white/10 px-3 py-2 text-sm sm:order-4 sm:px-3 sm:py-2">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-slate-300 sm:text-[10px]">
+                  Leaderboard
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsLeaderboardOpen(true)}
+                  className="mt-2 inline-flex w-full items-center justify-center rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-white/20 sm:mt-1.5"
+                >
+                  View
+                </button>
               </div>
             </div>
           </div>
@@ -423,6 +499,53 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
             })}
           </div>
         </section>
+
+        {isLeaderboardOpen ? (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/70 px-4 py-6">
+            <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/95 p-4 shadow-2xl backdrop-blur sm:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.35em] text-slate-400">Daily Top 10</p>
+                  <h2 className="mt-1 text-lg font-semibold text-white">Leaderboard</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsLeaderboardOpen(false)}
+                  className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-200 transition hover:bg-white/20"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-4">
+                {leaderboardEntries.length === 0 ? (
+                  <p className="text-sm text-slate-300">Be the first to set a score today.</p>
+                ) : (
+                  <ol className="space-y-2 text-sm text-slate-200">
+                    {leaderboardEntries.map((entry, index) => {
+                      const isPlayer = entry.username === playerUsername;
+                      return (
+                        <li
+                          key={`${entry.username}-${entry.score}-${index}`}
+                          className={`flex items-center justify-between rounded-lg px-3 py-2 ${
+                            isPlayer ? 'bg-white/15 text-white' : 'bg-white/5'
+                          }`}
+                        >
+                          <span className="flex items-center gap-3">
+                            <span className="w-5 text-xs text-slate-300">{index + 1}.</span>
+                            <span className="font-medium">{entry.username}</span>
+                            {isPlayer ? <span className="text-[11px] text-slate-300">You</span> : null}
+                          </span>
+                          <span className="font-semibold text-white">{entry.score}</span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {/* keep for future use; not shown */}
         <button onClick={handleReset} className="hidden" aria-hidden="true" tabIndex={-1}>

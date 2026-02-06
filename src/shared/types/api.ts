@@ -16,3 +16,20 @@ export type DecrementResponse = {
   postId: string;
   count: number;
 };
+
+export type LeaderboardEntry = {
+  username: string;
+  score: number;
+};
+
+export type LeaderboardResponse = {
+  type: 'leaderboard';
+  day: string;
+  entries: LeaderboardEntry[];
+};
+
+export type LeaderboardUpdateResponse = {
+  type: 'leaderboard_update';
+  day: string;
+  entries: LeaderboardEntry[];
+};
