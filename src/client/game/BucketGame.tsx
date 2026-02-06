@@ -87,6 +87,11 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
   const [playerUsername, setPlayerUsername] = useState('anonymous');
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
+  const [activeLeaderboardPeriod, setActiveLeaderboardPeriod] =
+    useState<LeaderboardResponse['period']>('daily');
+  const [leaderboardByPeriod, setLeaderboardByPeriod] = useState<
+    Partial<Record<LeaderboardResponse['period'], LeaderboardEntry[]>>
+  >({});
 
   const gameRef = useRef<HTMLDivElement | null>(null);
   const bucketRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -155,20 +160,23 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
       }
     };
 
-    const loadLeaderboard = async () => {
+    const loadLeaderboard = async (period: LeaderboardResponse['period']) => {
       try {
-        const res = await fetch('/api/leaderboard');
+        const res = await fetch(`/api/leaderboard?period=${period}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data: LeaderboardResponse = await res.json();
         if (data.type !== 'leaderboard') throw new Error('Unexpected response');
-        setLeaderboardEntries(data.entries);
+        setLeaderboardByPeriod((prev) => ({ ...prev, [period]: data.entries }));
+        if (period === activeLeaderboardPeriod) {
+          setLeaderboardEntries(data.entries);
+        }
       } catch (error) {
         console.error('Failed to load leaderboard', error);
       }
     };
 
     void loadPlayer();
-    void loadLeaderboard();
+    void loadLeaderboard('daily');
   }, []);
 
   useEffect(() => {
@@ -179,19 +187,43 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
         const res = await fetch('/api/leaderboard', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ score }),
+          body: JSON.stringify({ score, period: 'all' }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data: LeaderboardUpdateResponse = await res.json();
         if (data.type !== 'leaderboard_update') throw new Error('Unexpected response');
-        setLeaderboardEntries(data.entries);
+        setLeaderboardByPeriod((prev) => ({ ...prev, daily: data.entries }));
+        if (activeLeaderboardPeriod === 'daily') {
+          setLeaderboardEntries(data.entries);
+        }
       } catch (error) {
         console.error('Failed to update leaderboard', error);
       }
     };
 
     void submitScore();
-  }, [score]);
+  }, [score, activeLeaderboardPeriod]);
+
+  useEffect(() => {
+    const cachedEntries = leaderboardByPeriod[activeLeaderboardPeriod];
+    if (cachedEntries) {
+      setLeaderboardEntries(cachedEntries);
+      return;
+    }
+    const loadLeaderboard = async () => {
+      try {
+        const res = await fetch(`/api/leaderboard?period=${activeLeaderboardPeriod}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: LeaderboardResponse = await res.json();
+        if (data.type !== 'leaderboard') throw new Error('Unexpected response');
+        setLeaderboardByPeriod((prev) => ({ ...prev, [activeLeaderboardPeriod]: data.entries }));
+        setLeaderboardEntries(data.entries);
+      } catch (error) {
+        console.error('Failed to load leaderboard', error);
+      }
+    };
+    void loadLeaderboard();
+  }, [activeLeaderboardPeriod, leaderboardByPeriod]);
 
   useEffect(() => {
     const spawnInterval = window.setInterval(() => {
@@ -505,7 +537,9 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
             <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/95 p-4 shadow-2xl backdrop-blur sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.35em] text-slate-400">Daily Top 10</p>
+                  <p className="text-[11px] uppercase tracking-[0.35em] text-slate-400">
+                    {activeLeaderboardPeriod} top 10
+                  </p>
                   <h2 className="mt-1 text-lg font-semibold text-white">Leaderboard</h2>
                 </div>
                 <button
@@ -518,8 +552,32 @@ export const BucketGame = ({ showHintImage = false }: BucketGameProps) => {
               </div>
 
               <div className="mt-4">
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { id: 'daily', label: 'Daily' },
+                    { id: 'weekly', label: 'Weekly' },
+                    { id: 'monthly', label: 'Monthly' },
+                    { id: 'overall', label: 'Overall' },
+                  ] as const).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveLeaderboardPeriod(tab.id)}
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition ${
+                        activeLeaderboardPeriod === tab.id
+                          ? 'border-white/40 bg-white/20 text-white'
+                          : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
                 {leaderboardEntries.length === 0 ? (
-                  <p className="text-sm text-slate-300">Be the first to set a score today.</p>
+                  <p className="mt-3 text-sm text-slate-300">
+                    Be the first to set a score this period.
+                  </p>
                 ) : (
                   <ol className="space-y-2 text-sm text-slate-200">
                     {leaderboardEntries.map((entry, index) => {

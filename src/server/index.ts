@@ -3,6 +3,7 @@ import {
   InitResponse,
   IncrementResponse,
   DecrementResponse,
+  LeaderboardPeriod,
   LeaderboardResponse,
   LeaderboardUpdateResponse,
 } from '../shared/types/api';
@@ -22,18 +23,55 @@ const router = express.Router();
 
 const getLeaderboardDay = () => new Date().toISOString().slice(0, 10);
 
-const getLeaderboardKey = () => `leaderboard:${getLeaderboardDay()}`;
-
-const getSecondsUntilNextUtcDay = () => {
-  const now = new Date();
-  const nextUtcMidnight = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
-  );
-  return Math.max(60, Math.floor((nextUtcMidnight.getTime() - now.getTime()) / 1000));
+const getIsoWeekKey = (date: Date) => {
+  const utcDate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = utcDate.getUTCDay() || 7;
+  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(utcDate.getUTCFullYear(), 0, 1));
+  const weekNumber = Math.ceil(((utcDate.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${utcDate.getUTCFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
 };
 
-const fetchLeaderboardEntries = async () => {
-  const leaderboardKey = getLeaderboardKey();
+const getLeaderboardKey = (period: LeaderboardPeriod) => {
+  const now = new Date();
+  switch (period) {
+    case 'daily':
+      return `leaderboard:daily:${getLeaderboardDay()}`;
+    case 'weekly':
+      return `leaderboard:weekly:${getIsoWeekKey(now)}`;
+    case 'monthly':
+      return `leaderboard:monthly:${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    case 'overall':
+      return 'leaderboard:overall';
+  }
+};
+
+const getSecondsUntilNextPeriod = (period: LeaderboardPeriod) => {
+  const now = new Date();
+  if (period === 'overall') return null;
+
+  if (period === 'daily') {
+    const nextUtcMidnight = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+    );
+    return Math.max(60, Math.floor((nextUtcMidnight.getTime() - now.getTime()) / 1000));
+  }
+
+  if (period === 'weekly') {
+    const utcDay = now.getUTCDay() || 7;
+    const daysUntilNextWeek = 8 - utcDay;
+    const nextWeekStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + daysUntilNextWeek)
+    );
+    return Math.max(60, Math.floor((nextWeekStart.getTime() - now.getTime()) / 1000));
+  }
+
+  const nextMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  return Math.max(60, Math.floor((nextMonthStart.getTime() - now.getTime()) / 1000));
+};
+
+const fetchLeaderboardEntries = async (period: LeaderboardPeriod) => {
+  const leaderboardKey = getLeaderboardKey(period);
   const entries = await redis.zRange(leaderboardKey, 0, '+inf', {
     by: 'score',
     reverse: true,
@@ -127,10 +165,16 @@ router.get<unknown, LeaderboardResponse | { status: string; message: string }>(
   '/api/leaderboard',
   async (_req, res): Promise<void> => {
     try {
-      const entries = await fetchLeaderboardEntries();
+      const periodParam = _req.query?.period;
+      const period =
+        periodParam === 'weekly' || periodParam === 'monthly' || periodParam === 'overall'
+          ? periodParam
+          : 'daily';
+      const entries = await fetchLeaderboardEntries(period);
 
       res.json({
         type: 'leaderboard',
+        period,
         day: getLeaderboardDay(),
         entries,
       });
@@ -145,7 +189,11 @@ router.get<unknown, LeaderboardResponse | { status: string; message: string }>(
   }
 );
 
-router.post<unknown, LeaderboardUpdateResponse | { status: string; message: string }, { score?: number }>(
+router.post<
+  unknown,
+  LeaderboardUpdateResponse | { status: string; message: string },
+  { score?: number; period?: LeaderboardPeriod | 'all' }
+>(
   '/api/leaderboard',
   async (req, res): Promise<void> => {
     const score = Number(req.body?.score ?? 0);
@@ -159,18 +207,28 @@ router.post<unknown, LeaderboardUpdateResponse | { status: string; message: stri
 
     try {
       const username = (await reddit.getCurrentUsername()) ?? 'anonymous';
-      const leaderboardKey = getLeaderboardKey();
-      const existingScore = await redis.zScore(leaderboardKey, username);
+      const periodParam = req.body?.period ?? 'daily';
+      const periods: LeaderboardPeriod[] =
+        periodParam === 'all' ? ['daily', 'weekly', 'monthly', 'overall'] : [periodParam];
 
-      if (existingScore === undefined || score > existingScore) {
-        await redis.zAdd(leaderboardKey, { member: username, score });
-        await redis.expire(leaderboardKey, getSecondsUntilNextUtcDay());
+      for (const period of periods) {
+        const leaderboardKey = getLeaderboardKey(period);
+        const existingScore = await redis.zScore(leaderboardKey, username);
+        if (existingScore === undefined || score > existingScore) {
+          await redis.zAdd(leaderboardKey, { member: username, score });
+          const expireSeconds = getSecondsUntilNextPeriod(period);
+          if (expireSeconds) {
+            await redis.expire(leaderboardKey, expireSeconds);
+          }
+        }
       }
 
-      const entries = await fetchLeaderboardEntries();
+      const responsePeriod = periodParam === 'all' ? 'daily' : periodParam;
+      const entries = await fetchLeaderboardEntries(responsePeriod);
 
       res.json({
         type: 'leaderboard_update',
+        period: responsePeriod,
         day: getLeaderboardDay(),
         entries,
       });
